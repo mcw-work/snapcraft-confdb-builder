@@ -10,7 +10,6 @@ import 'services/key_service.dart';
 import 'services/snapcraft_env.dart';
 import 'services/store_schema_service.dart';
 import 'services/terminal_runner.dart';
-import 'services/tool_locator.dart';
 
 void main() {
   runApp(const ConfdbBuilderApp());
@@ -26,16 +25,13 @@ class ConfdbBuilderApp extends StatefulWidget {
 }
 
 class _ConfdbBuilderAppState extends State<ConfdbBuilderApp> {
-  late final Future<WorkbenchController> _controller =
-      widget.controller == null
+  late final Future<WorkbenchController> _controller = widget.controller == null
       ? _createController()
       : Future.value(widget.controller);
 
   Future<WorkbenchController> _createController() async {
     final runner = ProcessTerminalRunner();
-    final environment = await SnapcraftEnvironment.detect(
-      ToolLocator(runner: runner),
-    );
+    const environment = SnapcraftEnvironment();
     return WorkbenchController(
       accountService: AccountService(
         runner: runner,
@@ -45,10 +41,7 @@ class _ConfdbBuilderAppState extends State<ConfdbBuilderApp> {
       draftFileService: DraftFileService(
         preferences: await SharedPreferencesDraftPreferences.create(),
       ),
-      keyService: KeyService(
-        runner: runner,
-        snapcraftEnvironment: environment,
-      ),
+      keyService: KeyService(runner: runner, snapcraftEnvironment: environment),
       storeSchemaService: StoreSchemaService(
         runner: runner,
         snapcraftEnvironment: environment,
@@ -73,10 +66,14 @@ class _ConfdbBuilderAppState extends State<ConfdbBuilderApp> {
               }
               if (snapshot.hasError) {
                 return Scaffold(
-                  body: Center(child: Text('Unable to initialise: ${snapshot.error}')),
+                  body: Center(
+                    child: Text('Unable to initialise: ${snapshot.error}'),
+                  ),
                 );
               }
-              return const Scaffold(body: Center(child: CircularProgressIndicator()));
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
             },
           ),
         );

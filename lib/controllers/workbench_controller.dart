@@ -20,6 +20,14 @@ import '../services/terminal_runner.dart';
 
 enum WorkbenchTab { schema, views, source, validation, publish }
 
+@immutable
+class _LocalDraft {
+  const _LocalDraft({required this.id, required this.document});
+
+  final int id;
+  final ConfdbSchemaDocument document;
+}
+
 class WorkbenchController extends ChangeNotifier {
   WorkbenchController({
     ConfdbSchemaDocument? document,
@@ -47,7 +55,9 @@ class WorkbenchController extends ChangeNotifier {
   final Map<String, RunningCommand> _runningCommands = {};
 
   ConfdbSchemaDocument _document;
-  List<ConfdbSchemaDocument> _localDrafts = const [];
+  List<_LocalDraft> _localDraftEntries = const [];
+  int _nextLocalDraftId = 0;
+  int? _activeLocalDraftId;
   List<StoreSchemaRow> _storeRows = const [];
   List<Diagnostic> _diagnostics = const [];
   List<CommandTask> _commandTasks = const [];
@@ -62,8 +72,9 @@ class WorkbenchController extends ChangeNotifier {
   bool _isBusy = false;
 
   ConfdbSchemaDocument get document => _document;
-  List<ConfdbSchemaDocument> get localDrafts =>
-      UnmodifiableListView(_localDrafts);
+  List<ConfdbSchemaDocument> get localDrafts => UnmodifiableListView(
+    _localDraftEntries.map((entry) => entry.document),
+  );
   List<StoreSchemaRow> get storeRows => UnmodifiableListView(_storeRows);
   List<Diagnostic> get diagnostics => UnmodifiableListView(_diagnostics);
   List<CommandTask> get commandTasks => UnmodifiableListView(_commandTasks);
@@ -226,8 +237,7 @@ class WorkbenchController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void replaceLocalDrafts(Iterable<ConfdbSchemaDocument> drafts) {
-    _localDrafts = List.unmodifiable(drafts);
+  void refreshLocalDrafts() {
     notifyListeners();
   }
 
@@ -238,6 +248,7 @@ class WorkbenchController extends ChangeNotifier {
 
   void copyStoreSchema(ConfdbSchemaDocument remote) {
     final revision = remote.revision?.value ?? 'unknown';
+    _activeLocalDraftId = _nextLocalDraftId++;
     replaceDocument(
       remote.copyWith(
         origin: DraftOrigin.storeCopy(remoteRevision: revision),
@@ -274,6 +285,19 @@ class WorkbenchController extends ChangeNotifier {
   }
 
   void openDocument(ConfdbSchemaDocument document) {
+    _document = document;
+    _activeLocalDraftId = _nextLocalDraftId++;
+    _openDocument(document);
+    _upsertLocalDraft(document);
+  }
+
+  void openLocalDraftAt(int index) {
+    final entry = _localDraftEntries[index];
+    _activeLocalDraftId = entry.id;
+    _openDocument(entry.document);
+  }
+
+  void _openDocument(ConfdbSchemaDocument document) {
     _document = document;
     _diagnostics = _validator.validate(document);
     _canonicalSourceFingerprint = null;
@@ -357,6 +381,7 @@ class WorkbenchController extends ChangeNotifier {
         savedPath: savedPath,
       );
       _document = _document.copyWith(artifact: result.artifact, isDirty: true);
+      _upsertLocalDraft(_document);
       recordCommandTask(result.task, notify: false);
     } on AssertionServiceException catch (error) {
       _addBootstrapDiagnostic(error.code, error.message);
@@ -422,18 +447,21 @@ class WorkbenchController extends ChangeNotifier {
   }
 
   void _upsertLocalDraft(ConfdbSchemaDocument draft) {
-    final index = _localDrafts.indexWhere(
-      (candidate) =>
-          candidate.accountId == draft.accountId && candidate.name == draft.name,
+    final activeDraftId = _activeLocalDraftId ??= _nextLocalDraftId++;
+    final index = _localDraftEntries.indexWhere(
+      (entry) => entry.id == activeDraftId,
     );
-    final drafts = [..._localDrafts];
+    final drafts = [..._localDraftEntries];
     if (index == -1) {
-      drafts.add(draft);
+      drafts.add(_LocalDraft(id: activeDraftId, document: draft));
     } else {
-      drafts[index] = draft;
+      drafts[index] = _LocalDraft(id: activeDraftId, document: draft);
     }
-    _localDrafts = List.unmodifiable(drafts);
+    _localDraftEntries = List.unmodifiable(drafts);
   }
 
-  String _sourceFingerprint() => sha256.convert(utf8.encode(source)).toString();
+  String _sourceFingerprint() => _sourceFingerprintFor(_document);
+
+  String _sourceFingerprintFor(ConfdbSchemaDocument document) =>
+      sha256.convert(utf8.encode(_codec.encode(document))).toString();
 }

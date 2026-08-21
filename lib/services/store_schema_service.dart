@@ -143,6 +143,7 @@ class StoreSchemaService {
               'account-id=$accountId',
               'name=$name',
             ],
+            environment: _environment,
           ),
         )
         .result;

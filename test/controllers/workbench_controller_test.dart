@@ -14,6 +14,87 @@ import 'package:snapcraft_confdb_builder/services/terminal_runner.dart';
 import '../support/fake_terminal_runner.dart';
 
 void main() {
+  test('replaceDocument keeps the initial draft when identity fields change', () {
+    final controller = WorkbenchController(document: _document());
+
+    controller.replaceDocument(_document().copyWith(name: 'w'));
+    controller.replaceDocument(_document().copyWith(name: 'we'));
+    controller.replaceDocument(
+      _document().copyWith(name: 'we', accountId: 'opaqueStoreAccount'),
+    );
+
+    expect(controller.localDrafts, hasLength(1));
+    expect(controller.localDrafts.single.name, 'we');
+    expect(controller.localDrafts.single.accountId, 'opaqueStoreAccount');
+  });
+
+  test('openDocument adds the loaded document to local drafts', () {
+    final controller = WorkbenchController(document: _document());
+
+    controller.openDocument(_document().copyWith(name: 'loaded-schema'));
+
+    expect(controller.localDrafts, hasLength(1));
+    expect(controller.localDrafts.single.name, 'loaded-schema');
+  });
+
+  test('openLocalDraftAt updates the selected duplicate entry only', () {
+    final controller = WorkbenchController(document: _document());
+    controller.copyStoreSchema(_document());
+    controller.copyStoreSchema(_document());
+
+    controller.openLocalDraftAt(1);
+    controller.replaceDocument(
+      controller.document.copyWith(summary: 'Updated second draft'),
+    );
+
+    expect(controller.localDrafts, hasLength(2));
+    expect(
+      controller.localDrafts.map((draft) => draft.summary),
+      ['Weather settings', 'Updated second draft'],
+    );
+  });
+
+  test('openLocalDraftAt opens the controller-owned document at its index', () {
+    final controller = WorkbenchController(document: _document());
+    controller.replaceDocument(_document().copyWith(summary: 'Stored draft'));
+
+    controller.openLocalDraftAt(0);
+
+    expect(controller.document.summary, 'Stored draft');
+  });
+
+  test('refreshLocalDrafts preserves active draft identity for subsequent edits', () {
+    final controller = WorkbenchController(document: _document());
+    controller.replaceDocument(_document().copyWith(name: 'first-edit'));
+
+    controller.refreshLocalDrafts();
+    controller.replaceDocument(_document().copyWith(name: 'latest-edit'));
+
+    expect(controller.localDrafts, hasLength(1));
+    expect(controller.localDrafts.single.name, 'latest-edit');
+  });
+
+  test('openLocalDraftAt throws RangeError for an invalid index', () {
+    final controller = WorkbenchController(document: _document());
+
+    expect(() => controller.openLocalDraftAt(0), throwsRangeError);
+  });
+
+  test('copyStoreSchema preserves the active local draft before adding the copy', () {
+    final controller = WorkbenchController(document: _document());
+    controller.replaceDocument(_document().copyWith(summary: 'Existing draft'));
+
+    controller.copyStoreSchema(
+      _document().copyWith(name: 'copied-schema', summary: 'Copied schema'),
+    );
+
+    expect(controller.localDrafts, hasLength(2));
+    expect(
+      controller.localDrafts.map((draft) => draft.summary),
+      ['Existing draft', 'Copied schema'],
+    );
+  });
+
   test('replaceDocument invalidates derived publishing state', () {
     final controller = WorkbenchController(
       document: _document(
@@ -117,6 +198,34 @@ void main() {
     expect(controller.document.artifact!.savedPath, signedPath);
     expect(signingRunner.calls.single.stdin, controller.canonicalUnsignedAssertion);
     expect(File(draftPath).existsSync(), isTrue);
+  });
+
+  test('signing keeps the active local draft synchronized through a refresh', () async {
+    final signedPath = '${Directory.systemTemp.path}/confdb-builder-lifecycle.assert';
+    addTearDown(() async {
+      final signedFile = File(signedPath);
+      if (await signedFile.exists()) {
+        await signedFile.delete();
+      }
+    });
+    final signingRunner = FakeTerminalRunner()
+      ..enqueue(const CommandResult.ok(stdout: 'type: confdb-schema\n\nsignature'));
+    final controller = WorkbenchController(
+      document: _document(),
+      assertionService: AssertionService(runner: signingRunner),
+    );
+    controller.replaceDocument(_document().copyWith(summary: 'Before signing'));
+    controller.selectKey('brand-key');
+
+    await controller.signArtifact(savedPath: signedPath);
+    final signedDraft = controller.localDrafts.single;
+    expect(signedDraft.artifact, isNotNull);
+
+    controller.refreshLocalDrafts();
+    controller.replaceDocument(controller.document.copyWith(summary: 'Latest edit'));
+
+    expect(controller.localDrafts, hasLength(1));
+    expect(controller.localDrafts.single.summary, 'Latest edit');
   });
 }
 

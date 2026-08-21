@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
 
 import '../controllers/workbench_controller.dart';
-import '../models/confdb_schema_document.dart';
 import '../models/diagnostic.dart';
 import '../widgets/command_task_panel.dart';
 import '../widgets/diagnostics_panel.dart';
@@ -43,7 +42,7 @@ class _WorkbenchPageState extends State<WorkbenchPage> {
       ]),
       body: Stack(children: [
         Row(children: [
-          SizedBox(width: 230, child: DraftSidebar(drafts: _controller.localDrafts, onOpen: _openDraft, onRefresh: () => _controller.replaceLocalDrafts(_controller.localDrafts))),
+          SizedBox(width: 230, child: DraftSidebar(drafts: _controller.localDrafts, onOpen: _openDraftAt, onRefresh: _controller.refreshLocalDrafts)),
           const VerticalDivider(width: 1),
           Expanded(child: _center()),
           const VerticalDivider(width: 1),
@@ -118,12 +117,14 @@ class _WorkbenchPageState extends State<WorkbenchPage> {
     final location = await getSaveLocation(suggestedName: '${_controller.document.name.isEmpty ? 'confdb-schema' : _controller.document.name}.assert');
     if (location != null) await _controller.signArtifact(savedPath: location.path);
   }
-  Future<void> _openDraft(ConfdbSchemaDocument draft) async {
-    if (!_controller.document.isDirty) { _controller.openDocument(draft); return; }
+  Future<void> _openDraftAt(int index) async {
+    final selectedDraft = _controller.localDrafts[index];
+    if (!_controller.document.isDirty) { _controller.openLocalDraftAt(index); return; }
     final decision = await showDialog<_OpenDecision>(context: context, builder: (context) => AlertDialog(title: const Text('Save changes?'), content: const Text('The current draft has unsaved changes.'), actions: [TextButton(onPressed: () => Navigator.pop(context, _OpenDecision.cancel), child: const Text('Cancel')), TextButton(onPressed: () => Navigator.pop(context, _OpenDecision.discard), child: const Text('Discard')), FilledButton(onPressed: () => Navigator.pop(context, _OpenDecision.save), child: const Text('Save'))]));
     if (decision == null || decision == _OpenDecision.cancel) return;
     if (decision == _OpenDecision.save) _controller.markSaved();
-    _controller.openDocument(draft);
+    if (!identical(selectedDraft, _controller.localDrafts[index])) return;
+    _controller.openLocalDraftAt(index);
   }
 }
 enum _OpenDecision { discard, save, cancel }
