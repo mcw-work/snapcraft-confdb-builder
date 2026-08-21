@@ -87,9 +87,9 @@ class StoreSchemaService {
 
   Future<StoreSchemaInventoryResult> inventory(String accountId) async {
     final startedAt = DateTime.now();
-    var result = await _runInventory('confdb-schemas', accountId);
+    var result = await _runInventory('confdb-schemas');
     if (!result.succeeded && _isUnknownCommand(result)) {
-      result = await _runInventory('list-confdb-schemas', accountId);
+      result = await _runInventory('list-confdb-schemas');
     }
     final task = _task(
       id: 'inventory-${startedAt.microsecondsSinceEpoch}',
@@ -218,11 +218,11 @@ class StoreSchemaService {
     source: source,
   )).task;
 
-  Future<CommandResult> _runInventory(String command, String accountId) => runner
+  Future<CommandResult> _runInventory(String command) => runner
       .run(
         CommandRequest(
           executable: 'snapcraft',
-          arguments: [command, accountId],
+          arguments: [command],
           environment: _environment,
         ),
       )

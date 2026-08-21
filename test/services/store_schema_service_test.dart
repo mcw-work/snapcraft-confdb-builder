@@ -28,7 +28,7 @@ void main() {
 
     expect(runner.calls, hasLength(1));
     expect(runner.calls.single.executable, 'snapcraft');
-    expect(runner.calls.single.arguments, ['confdb-schemas', 'brand']);
+    expect(runner.calls.single.arguments, ['confdb-schemas']);
     expect(result.rows, hasLength(1));
     expect(result.rows.single.accountId, 'brand');
     expect(result.rows.single.name, 'weather');
@@ -50,11 +50,26 @@ void main() {
     expect(
       runner.calls.map((call) => call.arguments),
       [
-        ['confdb-schemas', 'brand'],
-        ['list-confdb-schemas', 'brand'],
+        ['confdb-schemas'],
+        ['list-confdb-schemas'],
       ],
     );
     expect(result.rows.single.name, 'weather');
+  });
+
+  test('parses all rows in the current Snapcraft table inventory', () async {
+    runner.enqueue(const CommandResult.ok(stdout: _tableInventory));
+
+    final result = await service.inventory('bpyPt7Qr2Qbui3MJMgyzZ3WaQkyj6OkU');
+
+    expect(runner.calls.single.arguments, ['confdb-schemas']);
+    expect(
+      result.rows.map((row) => (row.accountId, row.name, row.revision)),
+      [
+        ('bpyPt7Qr2Qbui3MJMgyzZ3WaQkyj6OkU', 'landscape-client', '2'),
+        ('bpyPt7Qr2Qbui3MJMgyzZ3WaQkyj6OkU', 'weather', '3'),
+      ],
+    );
   });
 
   test('does not fall back when inventory fails to authenticate', () async {
@@ -140,4 +155,10 @@ body: |-
   {
     "storage": {}
   }
+''';
+
+const _tableInventory = '''
+Account ID                         Name              Revision  When
+bpyPt7Qr2Qbui3MJMgyzZ3WaQkyj6OkU  landscape-client  2         2026-08-20T10:00:00Z
+bpyPt7Qr2Qbui3MJMgyzZ3WaQkyj6OkU  weather           3         2026-08-21T10:00:00Z
 ''';

@@ -29,7 +29,7 @@ void main() {
 
   test('reports an invalid account ID', () {
     final diagnostics = validator.validate(
-      documentWith(accountId: 'Brand_ID'),
+      documentWith(accountId: 'brand id'),
     );
 
     expect(
@@ -42,6 +42,17 @@ void main() {
           .location
           ?.path,
       'account-id',
+    );
+  });
+
+  test('accepts opaque mixed-case Snap Store account IDs', () {
+    final diagnostics = validator.validate(
+      documentWith(accountId: 'bpyPt7Qr2Qbui3MJMgyzZ3WaQkyj6OkU'),
+    );
+
+    expect(
+      diagnostics.map((item) => item.code),
+      isNot(contains('schema.invalid-account-id')),
     );
   });
 

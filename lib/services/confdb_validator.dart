@@ -42,11 +42,11 @@ class ConfdbValidator {
         message: 'An account ID is required.',
         location: const DiagnosticLocation(section: 'schema', path: 'account-id'),
       );
-    } else if (!_isIdentifier(document.accountId)) {
+    } else if (RegExp(r'\s').hasMatch(document.accountId)) {
       _add(
         diagnostics,
         code: 'schema.invalid-account-id',
-        message: 'The account ID must use lowercase letters, digits, and hyphens.',
+        message: 'The account ID must not contain whitespace.',
         location: const DiagnosticLocation(section: 'schema', path: 'account-id'),
       );
     }
