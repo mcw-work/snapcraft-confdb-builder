@@ -8,7 +8,7 @@ void main() {
     final choices = <Object?>['metric', 'imperial'];
     final node = StorageNode.array(
       items: StorageNode.string(
-        pattern: '^[a-z]+$',
+        pattern: r'^[a-z]+$',
         choices: choices,
         visibility: StorageVisibility.secret,
         ephemeral: true,
@@ -20,7 +20,7 @@ void main() {
     choices.add('changed');
 
     expect(node.kind, StorageKind.array);
-    expect(node.items!.pattern, '^[a-z]+$');
+    expect(node.items!.pattern, r'^[a-z]+$');
     expect(node.items!.choices, ['metric', 'imperial']);
     expect(node.items!.visibility, StorageVisibility.secret);
     expect(node.items!.ephemeral, isTrue);
