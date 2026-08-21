@@ -1,4 +1,5 @@
 import 'terminal_runner.dart';
+import 'snapcraft_env.dart';
 
 class SigningKey {
   const SigningKey({
@@ -31,9 +32,13 @@ class KeyServiceException implements Exception {
 }
 
 class KeyService {
-  KeyService({required this.runner});
+  KeyService({
+    required this.runner,
+    this.snapcraftEnvironment = const SnapcraftEnvironment(),
+  });
 
   final TerminalRunner runner;
+  final SnapcraftEnvironment snapcraftEnvironment;
 
   Future<List<SigningKey>> listKeys() async {
     final localResult = await runner
@@ -45,7 +50,13 @@ class KeyService {
 
     final localKeys = _parseKeys(localResult.stdout);
     final registeredResult = await runner
-        .run(CommandRequest(executable: 'snapcraft', arguments: ['keys']))
+        .run(
+          CommandRequest(
+            executable: 'snapcraft',
+            arguments: ['keys'],
+            environment: snapcraftEnvironment.build(),
+          ),
+        )
         .result;
     final registeredFingerprints = registeredResult.succeeded
         ? _parseKeys(registeredResult.stdout)

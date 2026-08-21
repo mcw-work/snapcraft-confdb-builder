@@ -220,11 +220,7 @@ class ConfdbSourceCodec {
   }
 
   StorageNode _parseStorageMap(Map storage) => StorageNode.map(
-        children: {
-          for (final entry in storage.entries)
-            if (entry.key is String && entry.value is Map)
-              entry.key as String: _parseStorageNode(entry.value as Map),
-        },
+        children: _parseStorageChildren(storage),
       );
 
   StorageNode _parseStorageNode(Map value) {
@@ -240,7 +236,7 @@ class ConfdbSourceCodec {
           ephemeral: value['ephemeral'] as bool?,
           required: value['required'] as bool?,
         ),
-      'integer' => StorageNode.integer(
+      'int' || 'integer' => StorageNode.integer(
           minimum: value['minimum'] as int?,
           maximum: value['maximum'] as int?,
           choices: _choices(value['choices']),
@@ -256,7 +252,7 @@ class ConfdbSourceCodec {
           ephemeral: value['ephemeral'] as bool?,
           required: value['required'] as bool?,
         ),
-      'boolean' => StorageNode.boolean(
+      'bool' || 'boolean' => StorageNode.boolean(
           choices: _choices(value['choices']),
           visibility: _visibility(value),
           ephemeral: value['ephemeral'] as bool?,
@@ -296,9 +292,22 @@ class ConfdbSourceCodec {
     }
     return {
       for (final entry in value.entries)
-        if (entry.key is String && entry.value is Map)
-          entry.key as String: _parseStorageNode(entry.value as Map),
+        _storageChildName(entry): _storageChildNode(entry),
     };
+  }
+
+  String _storageChildName(MapEntry entry) {
+    if (entry.key is! String || (entry.key as String).isEmpty) {
+      throw const FormatException('storage child names must be non-empty strings.');
+    }
+    return entry.key as String;
+  }
+
+  StorageNode _storageChildNode(MapEntry entry) {
+    if (entry.value is! Map) {
+      throw const FormatException('storage children must be maps.');
+    }
+    return _parseStorageNode(entry.value as Map);
   }
 
   List<Object?> _choices(Object? value) => switch (value) {
@@ -330,7 +339,11 @@ class ConfdbSourceCodec {
   }
 
   Map<String, Object?> _encodeStorageNode(StorageNode node) => {
-        'type': node.kind.name,
+        'type': switch (node.kind) {
+          StorageKind.integer => 'int',
+          StorageKind.boolean => 'bool',
+          _ => node.kind.name,
+        },
         if (node.kind == StorageKind.map)
           'schema': {
             for (final entry in node.children.entries)

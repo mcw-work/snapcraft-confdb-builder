@@ -108,9 +108,25 @@ void main() {
 
     final result = await service.preflight(draft);
 
-    expect(result.remote.name, 'weather');
-    expect(result.comparison.hasChanges, isFalse);
+    expect(result.remote!.name, 'weather');
+    expect(result.comparison!.hasChanges, isFalse);
     expect(result.task.kind, CommandTaskKind.fetchRemote);
+  });
+
+  test('preflight treats a missing remote schema as a new schema', () async {
+    runner.enqueue(const CommandResult(exitCode: 1, stderr: 'no assertions found'));
+    final draft = ConfdbSchemaDocument(
+      accountId: 'brand',
+      name: 'weather',
+      summary: 'Weather settings',
+      storage: StorageNode.map(),
+    );
+
+    final result = await service.preflight(draft);
+
+    expect(result.isNewSchema, isTrue);
+    expect(result.remote, isNull);
+    expect(result.comparison, isNull);
   });
 }
 

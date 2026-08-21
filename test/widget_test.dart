@@ -1,10 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:snapcraft_confdb_builder/controllers/workbench_controller.dart';
 import 'package:snapcraft_confdb_builder/main.dart';
 
 void main() {
   testWidgets('starts workbench', (WidgetTester tester) async {
-    await tester.pumpWidget(const ConfdbBuilderApp());
+    await tester.pumpWidget(ConfdbBuilderApp(controller: WorkbenchController()));
+    await tester.pump();
 
     expect(find.text('Snapcraft ConfDB Builder'), findsOneWidget);
     expect(find.text('Local drafts'), findsOneWidget);

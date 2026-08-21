@@ -6,6 +6,7 @@ import '../models/diagnostic.dart';
 import 'confdb_source_codec.dart';
 import 'editor_bridge.dart';
 import 'schema_diff_service.dart';
+import 'snapcraft_env.dart';
 import 'terminal_runner.dart';
 
 class StoreSchemaRow {
@@ -48,9 +49,11 @@ class StoreSchemaPreflightResult {
     required this.task,
   });
 
-  final ConfdbSchemaDocument remote;
-  final SchemaComparison comparison;
+  final ConfdbSchemaDocument? remote;
+  final SchemaComparison? comparison;
   final CommandTask task;
+
+  bool get isNewSchema => remote == null;
 }
 
 class StoreSchemaServiceException implements Exception {
@@ -68,13 +71,19 @@ class StoreSchemaService {
     required this.runner,
     this.codec = const ConfdbSourceCodec(),
     this.diffService = const SchemaDiffService(),
+    SnapcraftEnvironment? snapcraftEnvironment,
     EditorBridge? editorBridge,
-  }) : editorBridge = editorBridge ?? EditorBridge(runner: runner);
+  }) : _environment = (snapcraftEnvironment ?? const SnapcraftEnvironment()).build(),
+       editorBridge = editorBridge ?? EditorBridge(
+         runner: runner,
+         environment: (snapcraftEnvironment ?? const SnapcraftEnvironment()).build(),
+       );
 
   final TerminalRunner runner;
   final ConfdbSourceCodec codec;
   final SchemaDiffService diffService;
   final EditorBridge editorBridge;
+  final Map<String, String> _environment;
 
   Future<StoreSchemaInventoryResult> inventory(String accountId) async {
     final startedAt = DateTime.now();
@@ -164,16 +173,38 @@ class StoreSchemaService {
   Future<StoreSchemaPreflightResult> preflight(
     ConfdbSchemaDocument draft,
   ) async {
-    final remote = await fetchRemote(
-      accountId: draft.accountId,
-      name: draft.name,
-    );
-    return StoreSchemaPreflightResult(
-      remote: remote.document,
-      comparison: diffService.compare(remote: remote.document, draft: draft),
-      task: remote.task,
-    );
+    try {
+      final remote = await fetchRemote(
+        accountId: draft.accountId,
+        name: draft.name,
+      );
+      return StoreSchemaPreflightResult(
+        remote: remote.document,
+        comparison: diffService.compare(remote: remote.document, draft: draft),
+        task: remote.task,
+      );
+    } on StoreSchemaServiceException catch (error) {
+      if (error.code == 'store.remote-fetch-failed' &&
+          _isRemoteNotFound(error.message)) {
+        return StoreSchemaPreflightResult(
+          remote: null,
+          comparison: null,
+          task: CommandTask(
+            id: 'fetch-remote-new-${DateTime.now().microsecondsSinceEpoch}',
+            kind: CommandTaskKind.fetchRemote,
+            status: CommandTaskStatus.succeeded,
+            label: 'No remote ConfDB schema found',
+          ),
+        );
+      }
+      rethrow;
+    }
   }
+
+  bool _isRemoteNotFound(String message) => RegExp(
+        r'no assertions?|not found|cannot find',
+        caseSensitive: false,
+      ).hasMatch(message);
 
   Future<CommandTask> publish({
     required String accountId,
@@ -192,6 +223,7 @@ class StoreSchemaService {
         CommandRequest(
           executable: 'snapcraft',
           arguments: [command, accountId],
+          environment: _environment,
         ),
       )
       .result;

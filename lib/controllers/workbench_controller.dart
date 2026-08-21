@@ -7,9 +7,13 @@ import 'package:flutter/foundation.dart';
 import '../models/command_task.dart';
 import '../models/confdb_schema_document.dart';
 import '../models/diagnostic.dart';
+import '../services/account_service.dart';
 import '../services/assertion_service.dart';
+import '../services/confdb_assertion_builder.dart';
 import '../services/confdb_source_codec.dart';
 import '../services/confdb_validator.dart';
+import '../services/draft_file_service.dart';
+import '../services/key_service.dart';
 import '../services/schema_diff_service.dart';
 import '../services/store_schema_service.dart';
 import '../services/terminal_runner.dart';
@@ -21,8 +25,12 @@ class WorkbenchController extends ChangeNotifier {
     ConfdbSchemaDocument? document,
     this._validator = const ConfdbValidator(),
     this._codec = const ConfdbSourceCodec(),
-    this._storeSchemaService,
-    this._assertionService,
+    this.assertionBuilder = const ConfdbAssertionBuilder(),
+    this.storeSchemaService,
+    this.assertionService,
+    this.draftFileService,
+    this.accountService,
+    this.keyService,
   }) : _document =
            document ?? ConfdbSchemaDocument.empty(accountId: '', name: '') {
     _diagnostics = _validator.validate(_document);
@@ -30,8 +38,12 @@ class WorkbenchController extends ChangeNotifier {
 
   final ConfdbValidator _validator;
   final ConfdbSourceCodec _codec;
-  final StoreSchemaService? _storeSchemaService;
-  final AssertionService? _assertionService;
+  final ConfdbAssertionBuilder assertionBuilder;
+  final StoreSchemaService? storeSchemaService;
+  final AssertionService? assertionService;
+  final DraftFileService? draftFileService;
+  final AccountService? accountService;
+  final KeyService? keyService;
   final Map<String, RunningCommand> _runningCommands = {};
 
   ConfdbSchemaDocument _document;
@@ -46,6 +58,7 @@ class WorkbenchController extends ChangeNotifier {
   ConfdbSchemaDocument? _preflightRemote;
   SchemaComparison? _preflightComparison;
   String? _selectedKeyName;
+  List<SigningKey> _keys = const [];
   bool _isBusy = false;
 
   ConfdbSchemaDocument get document => _document;
@@ -60,6 +73,8 @@ class WorkbenchController extends ChangeNotifier {
     ConfdbSchemaDocument? get preflightRemote => _preflightRemote;
     SchemaComparison? get preflightComparison => _preflightComparison;
     String? get selectedKeyName => _selectedKeyName ?? _document.artifact?.keyName;
+      List<SigningKey> get keys => UnmodifiableListView(_keys);
+      String? get canonicalUnsignedAssertion => assertionBuilder.build(_document).unsignedInput;
     bool get hasBlockers => _diagnostics.any((diagnostic) => diagnostic.isBlocker) ||
       (_preflightComparison?.hasBlockers ?? false);
     bool get preflightCurrent =>
@@ -105,7 +120,7 @@ class WorkbenchController extends ChangeNotifier {
   }
 
   Future<void> refreshPreflight() async {
-    final service = _storeSchemaService;
+    final service = storeSchemaService;
     if (service == null || _document.accountId.isEmpty || _document.name.isEmpty) {
       return;
     }
@@ -137,7 +152,7 @@ class WorkbenchController extends ChangeNotifier {
   }
 
   Future<void> publish() async {
-    final service = _storeSchemaService;
+    final service = storeSchemaService;
     final keyName = selectedKeyName;
     if (service == null || keyName == null || !canPublish) return;
     _isBusy = true;
@@ -181,7 +196,7 @@ class WorkbenchController extends ChangeNotifier {
   }
 
   Future<void> acknowledgeArtifact() async {
-    final service = _assertionService;
+    final service = assertionService;
     final savedPath = _document.artifact?.savedPath;
     if (service == null || savedPath == null) return;
     _isBusy = true;
@@ -232,7 +247,7 @@ class WorkbenchController extends ChangeNotifier {
   }
 
   Future<void> copyStoreRow(StoreSchemaRow row) async {
-    final service = _storeSchemaService;
+    final service = storeSchemaService;
     if (service == null) return;
     _isBusy = true;
     notifyListeners();
@@ -277,7 +292,7 @@ class WorkbenchController extends ChangeNotifier {
   }
 
   Future<void> refreshStore(String accountId) async {
-    final service = _storeSchemaService;
+    final service = storeSchemaService;
     if (service == null) {
       return;
     }
@@ -299,6 +314,91 @@ class WorkbenchController extends ChangeNotifier {
     if (notify) {
       notifyListeners();
     }
+  }
+
+  Future<void> bootstrap() async {
+    final account = accountService;
+    final keys = keyService;
+    if (account == null || keys == null) {
+      return;
+    }
+    _isBusy = true;
+    notifyListeners();
+    try {
+      final currentAccount = await account.currentAccount();
+      _keys = await keys.listKeys();
+      if (_document.accountId.isEmpty) {
+        _document = _document.copyWith(accountId: currentAccount.id);
+        _diagnostics = _validator.validate(_document);
+      }
+    } on AccountServiceException catch (error) {
+      _addBootstrapDiagnostic(error.code, error.message);
+    } on KeyServiceException catch (error) {
+      _addBootstrapDiagnostic(error.code, error.message);
+    } finally {
+      _isBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> signArtifact({required String savedPath}) async {
+    final service = assertionService;
+    final keyName = selectedKeyName;
+    final unsignedAssertion = canonicalUnsignedAssertion;
+    if (service == null || keyName == null || unsignedAssertion == null) {
+      return;
+    }
+    _isBusy = true;
+    notifyListeners();
+    try {
+      final result = await service.sign(
+        keyName: keyName,
+        unsignedAssertion: unsignedAssertion,
+        savedPath: savedPath,
+      );
+      _document = _document.copyWith(artifact: result.artifact, isDirty: true);
+      recordCommandTask(result.task, notify: false);
+    } on AssertionServiceException catch (error) {
+      _addBootstrapDiagnostic(error.code, error.message);
+    } finally {
+      _isBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> saveDraft(String path) async {
+    final service = draftFileService;
+    if (service == null) return;
+    await service.write(_document, path);
+    _document = _document.copyWith(
+      origin: DraftOrigin.localFile(path),
+      isDirty: false,
+    );
+    _upsertLocalDraft(_document);
+    notifyListeners();
+  }
+
+  Future<void> loadDraft(String path) async {
+    final service = draftFileService;
+    if (service == null) return;
+    try {
+      openDocument(await service.read(path));
+    } on DraftFileServiceException catch (error) {
+      _addBootstrapDiagnostic(error.code, error.message);
+      notifyListeners();
+    }
+  }
+
+  void _addBootstrapDiagnostic(String code, String message) {
+    _diagnostics = [
+      ..._diagnostics.where((diagnostic) => diagnostic.code != code),
+      Diagnostic(
+        code: code,
+        message: message,
+        severity: DiagnosticSeverity.blocker,
+        location: const DiagnosticLocation(section: 'bootstrap'),
+      ),
+    ];
   }
 
   void registerRunningCommand(String taskId, RunningCommand command) {

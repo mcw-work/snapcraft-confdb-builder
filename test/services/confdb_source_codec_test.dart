@@ -117,6 +117,62 @@ body: |-
     expect(result.diagnostics.single.code, 'source.missing-storage');
   });
 
+  test('parses and emits ConfDB int and bool storage types', () {
+    const source = '''
+type: confdb-schema
+account-id: brand-id
+name: weather
+summary: Weather settings
+body: |-
+  {"storage":{"retries":{"type":"int"},"enabled":{"type":"bool"}}}
+''';
+
+    final parsed = codec.parse(source);
+
+    expect(parsed.applied, isTrue);
+    expect(parsed.document!.storage.children['retries']!.kind, StorageKind.integer);
+    expect(parsed.document!.storage.children['enabled']!.kind, StorageKind.boolean);
+    expect(codec.encode(parsed.document!), contains('"type": "int"'));
+    expect(codec.encode(parsed.document!), contains('"type": "bool"'));
+  });
+
+  test('rejects malformed storage children without replacing the active document', () {
+    final activeDocument = ConfdbSchemaDocument.empty(
+      accountId: 'brand-id',
+      name: 'weather',
+    );
+    const source = '''
+type: confdb-schema
+account-id: brand-id
+name: weather
+summary: Weather settings
+body: |-
+  {"storage":{"valid":{"type":"string"},"invalid":"string"}}
+''';
+
+    final result = codec.applySource(activeDocument, source);
+
+    expect(result.applied, isFalse);
+    expect(result.document, same(activeDocument));
+    expect(result.diagnostics.single.isBlocker, isTrue);
+  });
+
+  test('rejects malformed map schema children', () {
+    const source = '''
+type: confdb-schema
+account-id: brand-id
+name: weather
+summary: Weather settings
+body: |-
+  {"storage":{"settings":{"type":"map","schema":{"bad":"string"}}}}
+''';
+
+    final result = codec.parse(source);
+
+    expect(result.applied, isFalse);
+    expect(result.diagnostics.single.isBlocker, isTrue);
+  });
+
   test('encodes canonical Store editor source', () {
     final source = codec.encode(
       ConfdbSchemaDocument(

@@ -235,7 +235,7 @@ class SchemaDiffService {
             code: 'view.reduced-access',
             message:
                 'View ${current.viewName} no longer grants write access for ${current.request}.',
-            severity: DiagnosticSeverity.blocker,
+            severity: DiagnosticSeverity.advisory,
             location: DiagnosticLocation(
               section: 'views',
               viewName: current.viewName,
@@ -317,7 +317,7 @@ class SchemaDiffService {
   }) => Diagnostic(
     code: code,
     message: message,
-    severity: DiagnosticSeverity.blocker,
+    severity: DiagnosticSeverity.advisory,
     location: DiagnosticLocation(section: 'storage', path: path),
   );
 

@@ -21,6 +21,8 @@ void main() {
           builder: (context, setState) => Scaffold(
             body: PublishPanel(
               document: draft,
+              unsignedAssertion: 'type: confdb-schema\n',
+              keys: const [],
               selectedKeyName: 'developer-key',
               diagnostics: const [
                 Diagnostic(
@@ -33,6 +35,8 @@ void main() {
               comparison: preflighted ? comparison : null,
               preflightCurrent: preflighted,
               onRefreshPreflight: () => setState(() => preflighted = true),
+              onSelectKey: (_) {},
+              onSign: () {},
               onRunAck: () {},
               onPublish: () {},
             ),
@@ -49,6 +53,42 @@ void main() {
       tester.widget<FilledButton>(find.byKey(const Key('publish-button'))).onPressed,
       isNull,
     );
+  });
+
+  testWidgets('shows the supplied canonical unsigned assertion and runs acknowledgement', (tester) async {
+    var acknowledgements = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PublishPanel(
+            document: _document().copyWith(
+              artifact: SigningArtifact(
+                keyName: 'developer-key',
+                signedAssertion: 'signed assertion',
+                savedPath: '/tmp/weather.assert',
+                createdAt: DateTime(2026),
+              ),
+            ),
+            unsignedAssertion: 'type: confdb-schema\nbody: |-\n  {}\n',
+            keys: const [],
+            selectedKeyName: 'developer-key',
+            diagnostics: const [],
+            remote: null,
+            comparison: null,
+            preflightCurrent: true,
+            onRefreshPreflight: () {},
+            onSelectKey: (_) {},
+            onSign: () {},
+            onRunAck: () => acknowledgements++,
+            onPublish: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('body: |-'), findsOneWidget);
+    await tester.tap(find.text('Run snap ack'));
+    expect(acknowledgements, 1);
   });
 }
 

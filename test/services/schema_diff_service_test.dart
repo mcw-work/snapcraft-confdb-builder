@@ -129,6 +129,30 @@ void main() {
       comparison.diagnostics.map((diagnostic) => diagnostic.code),
       contains('view.reduced-access'),
     );
+    expect(comparison.hasBlockers, isFalse);
+  });
+
+  test('reports storage evolution as advisory diagnostics', () {
+    final comparison = service.compare(
+      remote: schema(
+        storageChildren: {
+          'v1': StorageNode.map(children: {'limit': StorageNode.integer()}),
+        },
+      ),
+      draft: schema(
+        storageChildren: {
+          'v1': StorageNode.map(children: {'renamed': StorageNode.string()}),
+        },
+      ),
+    );
+
+    expect(comparison.hasBlockers, isFalse);
+    expect(
+      comparison.diagnostics.every(
+        (diagnostic) => diagnostic.severity == DiagnosticSeverity.advisory,
+      ),
+      isTrue,
+    );
   });
 }
 

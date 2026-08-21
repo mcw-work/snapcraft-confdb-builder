@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:file_selector/file_selector.dart';
 
 import '../controllers/workbench_controller.dart';
 import '../models/confdb_schema_document.dart';
@@ -24,13 +25,22 @@ class _WorkbenchPageState extends State<WorkbenchPage> {
   late final WorkbenchController _controller = widget.controller ?? WorkbenchController();
   late final bool _ownsController = widget.controller == null;
   @override
+  void initState() {
+    super.initState();
+    _controller.bootstrap();
+  }
+  @override
   void dispose() { if (_ownsController) _controller.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: _controller,
     builder: (context, _) => Scaffold(
-      appBar: AppBar(title: const Text('Snapcraft ConfDB Builder'), actions: [if (_controller.document.isDirty) const Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Center(child: Text('Unsaved changes')))]),
+      appBar: AppBar(title: const Text('Snapcraft ConfDB Builder'), actions: [
+        IconButton(tooltip: 'Open draft', icon: const Icon(Icons.folder_open_outlined), onPressed: _loadDraft),
+        IconButton(tooltip: 'Save draft', icon: const Icon(Icons.save_outlined), onPressed: _saveDraft),
+        if (_controller.document.isDirty) const Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Center(child: Text('Unsaved changes'))),
+      ]),
       body: Stack(children: [
         Row(children: [
           SizedBox(width: 230, child: DraftSidebar(drafts: _controller.localDrafts, onOpen: _openDraft, onRefresh: () => _controller.replaceLocalDrafts(_controller.localDrafts))),
@@ -72,13 +82,17 @@ class _WorkbenchPageState extends State<WorkbenchPage> {
     WorkbenchTab.validation => DiagnosticsPanel(diagnostics: _controller.diagnostics, onNavigate: _navigateDiagnostic),
     WorkbenchTab.publish => PublishPanel(
       document: _controller.document,
+      unsignedAssertion: _controller.canonicalUnsignedAssertion ?? 'Fix validation errors to build the canonical assertion.',
+      keys: _controller.keys,
       selectedKeyName: _controller.selectedKeyName,
       diagnostics: _controller.diagnostics,
       remote: _controller.preflightRemote,
       comparison: _controller.preflightComparison,
       preflightCurrent: _controller.preflightCurrent,
       onRefreshPreflight: _controller.refreshPreflight,
-      onRunAck: () {},
+      onSelectKey: _controller.selectKey,
+      onSign: _signArtifact,
+      onRunAck: _controller.acknowledgeArtifact,
       onPublish: _controller.publish,
     ),
   };
@@ -92,6 +106,18 @@ class _WorkbenchPageState extends State<WorkbenchPage> {
   Widget _field(String label, String value, ValueChanged<String> onChanged) => Padding(padding: const EdgeInsets.only(bottom: 8), child: TextFormField(initialValue: value, decoration: InputDecoration(labelText: label), onChanged: onChanged));
   void _replaceSchema({String? accountId, String? name, String? summary}) => _controller.replaceDocument(_controller.document.copyWith(accountId: accountId, name: name, summary: summary));
   void _navigateDiagnostic(Diagnostic diagnostic) { final section = diagnostic.location?.section; _controller.selectTab(switch (section) {'source' => WorkbenchTab.source, 'views' => WorkbenchTab.views, _ => WorkbenchTab.schema}); _controller.selectView(diagnostic.location?.viewName); }
+  Future<void> _loadDraft() async {
+    final file = await openFile(acceptedTypeGroups: const [XTypeGroup(label: 'ConfDB schema', extensions: ['yaml', 'yml'])]);
+    if (file != null) await _controller.loadDraft(file.path);
+  }
+  Future<void> _saveDraft() async {
+    final location = await getSaveLocation(suggestedName: '${_controller.document.name.isEmpty ? 'confdb-schema' : _controller.document.name}.yaml');
+    if (location != null) await _controller.saveDraft(location.path);
+  }
+  Future<void> _signArtifact() async {
+    final location = await getSaveLocation(suggestedName: '${_controller.document.name.isEmpty ? 'confdb-schema' : _controller.document.name}.assert');
+    if (location != null) await _controller.signArtifact(savedPath: location.path);
+  }
   Future<void> _openDraft(ConfdbSchemaDocument draft) async {
     if (!_controller.document.isDirty) { _controller.openDocument(draft); return; }
     final decision = await showDialog<_OpenDecision>(context: context, builder: (context) => AlertDialog(title: const Text('Save changes?'), content: const Text('The current draft has unsaved changes.'), actions: [TextButton(onPressed: () => Navigator.pop(context, _OpenDecision.cancel), child: const Text('Cancel')), TextButton(onPressed: () => Navigator.pop(context, _OpenDecision.discard), child: const Text('Discard')), FilledButton(onPressed: () => Navigator.pop(context, _OpenDecision.save), child: const Text('Save'))]));

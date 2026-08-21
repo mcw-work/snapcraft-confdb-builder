@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Snapcraft ConfDB Builder
+Comment=Create and manage Snapcraft ConfDB schema assertions
+Exec=snapcraft-confdb-builder
+Icon=${SNAP}/meta/gui/snapcraft-confdb-builder.svg
+Terminal=false
+Type=Application
+Categories=Development;IDE;
+Keywords=snapcraft;snap;confdb;assertion;

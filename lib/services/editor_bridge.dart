@@ -12,10 +12,15 @@ class EditorPublishResult {
 }
 
 class EditorBridge {
-  EditorBridge({required this.runner, this.temporaryParent});
+  EditorBridge({
+    required this.runner,
+    this.temporaryParent,
+    this.environment = const {},
+  });
 
   final TerminalRunner runner;
   final Directory? temporaryParent;
+  final Map<String, String> environment;
 
   Future<EditorPublishResult> publish({
     required String keyName,
@@ -50,7 +55,7 @@ class EditorBridge {
                 name,
               ],
               environment: {
-                ...sanitizedHostEnvironment(),
+                ...sanitizedHostEnvironment(environment),
                 'EDITOR': script.path,
                 'CONFDB_EDITOR_SOURCE': sourceFile.path,
               },

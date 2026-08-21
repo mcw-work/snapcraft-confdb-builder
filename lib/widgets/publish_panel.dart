@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/confdb_schema_document.dart';
 import '../models/diagnostic.dart';
+import '../services/key_service.dart';
 import '../services/schema_diff_service.dart';
 import 'publish_confirmation_dialog.dart';
 import 'schema_diff_view.dart';
@@ -10,23 +11,31 @@ class PublishPanel extends StatelessWidget {
   const PublishPanel({
     super.key,
     required this.document,
+    required this.unsignedAssertion,
+    required this.keys,
     required this.selectedKeyName,
     required this.diagnostics,
     required this.remote,
     required this.comparison,
     required this.preflightCurrent,
     required this.onRefreshPreflight,
+    required this.onSelectKey,
+    required this.onSign,
     required this.onRunAck,
     required this.onPublish,
   });
 
   final ConfdbSchemaDocument document;
+  final String unsignedAssertion;
+  final List<SigningKey> keys;
   final String? selectedKeyName;
   final List<Diagnostic> diagnostics;
   final ConfdbSchemaDocument? remote;
   final SchemaComparison? comparison;
   final bool preflightCurrent;
   final VoidCallback onRefreshPreflight;
+  final ValueChanged<String?> onSelectKey;
+  final VoidCallback onSign;
   final VoidCallback onRunAck;
   final VoidCallback onPublish;
 
@@ -43,10 +52,19 @@ class PublishPanel extends StatelessWidget {
       _detail('Account', document.accountId),
       _detail('Schema target', document.name),
       _detail('Selected key', selectedKeyName ?? 'No key selected'),
+      DropdownButtonFormField<String>(
+        initialValue: selectedKeyName,
+        decoration: const InputDecoration(labelText: 'Signing key'),
+        items: keys
+            .map((key) => DropdownMenuItem(value: key.name, child: Text(key.name)))
+            .toList(growable: false),
+        onChanged: onSelectKey,
+      ),
       _detail('Preflight', preflightCurrent ? 'Current source' : 'Refresh required'),
       const SizedBox(height: 8),
       Wrap(spacing: 8, runSpacing: 8, children: [
         OutlinedButton.icon(onPressed: onRefreshPreflight, icon: const Icon(Icons.refresh), label: const Text('Refresh preflight')),
+        OutlinedButton.icon(onPressed: _canSign ? onSign : null, icon: const Icon(Icons.draw_outlined), label: const Text('Sign assertion')),
         OutlinedButton.icon(onPressed: document.artifact?.savedPath == null ? null : onRunAck, icon: const Icon(Icons.verified_outlined), label: const Text('Run snap ack')),
         FilledButton.icon(
           key: const Key('publish-button'),
@@ -64,15 +82,13 @@ class PublishPanel extends StatelessWidget {
       Text('Validation state: ${_hasBlockers ? 'Blocked' : 'Ready'}'),
       const Divider(height: 32),
       Text('Unsigned assertion', style: Theme.of(context).textTheme.titleSmall),
-      SelectableText(_unsignedAssertion, style: const TextStyle(fontFamily: 'monospace')),
+      SelectableText(unsignedAssertion, style: const TextStyle(fontFamily: 'monospace')),
       const SizedBox(height: 12),
       Text('Signed assertion', style: Theme.of(context).textTheme.titleSmall),
       SelectableText(document.artifact?.signedAssertion ?? 'Not signed', style: const TextStyle(fontFamily: 'monospace')),
       _detail('Saved path', document.artifact?.savedPath ?? 'Not saved'),
     ],
   );
-
-  String get _unsignedAssertion => 'account-id: ${document.accountId}\nname: ${document.name}\nsummary: ${document.summary}';
 
   Widget _detail(String label, String value) => Padding(
     padding: const EdgeInsets.only(bottom: 4),
