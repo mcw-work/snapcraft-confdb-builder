@@ -113,6 +113,16 @@ void main() {
     expect(result.task.kind, CommandTaskKind.fetchRemote);
   });
 
+  test('fetches and parses a signed remote schema assertion', () async {
+    runner.enqueue(const CommandResult.ok(stdout: _remoteAssertion));
+
+    final result = await service.fetchRemote(accountId: 'brand', name: 'weather');
+
+    expect(result.document.name, 'weather');
+    expect(result.document.revision!.value, '4');
+    expect(result.document.storage.children, isEmpty);
+  });
+
   test('fetches remote schemas with the sanitized Snapcraft environment', () async {
     runner.enqueue(const CommandResult.ok(stdout: _source));
     service = StoreSchemaService(
@@ -168,6 +178,19 @@ body: |-
   {
     "storage": {}
   }
+''';
+
+const _remoteAssertion = '''
+type: confdb-schema
+account-id: brand
+name: weather
+summary: Weather settings
+revision: 4
+body-length: 14
+
+{"storage":{}}
+
+signature
 ''';
 
 const _tableInventory = '''

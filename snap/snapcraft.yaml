@@ -1,6 +1,6 @@
 name: snapcraft-confdb-builder
 title: Snapcraft ConfDB Builder
-version: '1.0.1'
+version: '1.0.2'
 summary: Desktop workbench for Snapcraft ConfDB schema assertions
 description: |
   A graphical tool for authoring and publishing Snapcraft ConfDB schema

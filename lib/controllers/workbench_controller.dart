@@ -355,6 +355,7 @@ class WorkbenchController extends ChangeNotifier {
         _document = _document.copyWith(accountId: currentAccount.id);
         _diagnostics = _validator.validate(_document);
       }
+      await refreshStore(currentAccount.id);
     } on AccountServiceException catch (error) {
       _addBootstrapDiagnostic(error.code, error.message);
     } on KeyServiceException catch (error) {

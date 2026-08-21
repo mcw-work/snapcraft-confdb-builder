@@ -35,9 +35,16 @@ class ConfdbSourceCodec {
   }
 
   SourceApplyResult parse(String source) {
+    final normalizedSource = _normalizeSignedAssertion(source);
+    if (normalizedSource == null) {
+      return _blocked(
+        'source.invalid-assertion',
+        'The signed assertion body is incomplete.',
+      );
+    }
     final Object? decodedYaml;
     try {
-      decodedYaml = loadYaml(source);
+      decodedYaml = loadYaml(normalizedSource);
     } on YamlException catch (error) {
       return _blocked('source.invalid-yaml', 'Invalid YAML: ${error.message}');
     }
@@ -144,6 +151,32 @@ class ConfdbSourceCodec {
         ],
         applied: false,
       );
+
+  String? _normalizeSignedAssertion(String source) {
+    final separator = RegExp(r'\r?\n\r?\n').firstMatch(source);
+    if (separator == null) {
+      return source;
+    }
+    final headers = source.substring(0, separator.start);
+    final bodyLength = RegExp(
+      r'^body-length:\s*(\d+)\s*$',
+      multiLine: true,
+    ).firstMatch(headers);
+    if (bodyLength == null) {
+      return source;
+    }
+    final length = int.tryParse(bodyLength.group(1)!);
+    final bodyBytes = utf8.encode(source.substring(separator.end));
+    if (length == null || bodyBytes.length < length) {
+      return null;
+    }
+    final body = utf8.decode(bodyBytes.sublist(0, length));
+    final editorHeaders = headers
+        .split(RegExp(r'\r?\n'))
+        .where((line) => !line.startsWith('body-length:'));
+    return '${editorHeaders.join('\n')}\nbody: |-\n'
+        '${body.split('\n').map((line) => '  $line').join('\n')}\n';
+  }
 
   Map<String, Object?> _toDartMap(YamlMap map) => {
         for (final entry in map.entries) '${entry.key}': _toDartValue(entry.value),

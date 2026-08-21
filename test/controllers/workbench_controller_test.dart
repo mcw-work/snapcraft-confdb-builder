@@ -8,6 +8,9 @@ import 'package:snapcraft_confdb_builder/models/storage_node.dart';
 import 'package:snapcraft_confdb_builder/services/assertion_service.dart';
 import 'package:snapcraft_confdb_builder/services/confdb_assertion_builder.dart';
 import 'package:snapcraft_confdb_builder/services/draft_file_service.dart';
+import 'package:snapcraft_confdb_builder/services/account_service.dart';
+import 'package:snapcraft_confdb_builder/services/key_service.dart';
+import 'package:snapcraft_confdb_builder/services/snapcraft_env.dart';
 import 'package:snapcraft_confdb_builder/services/store_schema_service.dart';
 import 'package:snapcraft_confdb_builder/services/terminal_runner.dart';
 
@@ -35,6 +38,29 @@ void main() {
 
     expect(controller.localDrafts, hasLength(1));
     expect(controller.localDrafts.single.name, 'loaded-schema');
+  });
+
+  test('bootstrap loads Store schemas for the authenticated account', () async {
+    final accountRunner = FakeTerminalRunner()
+      ..enqueue(const CommandResult.ok(stdout: 'id: brand\n'));
+    final keyRunner = FakeTerminalRunner()
+      ..enqueue(const CommandResult.ok(stdout: 'name fingerprint\n'))
+      ..enqueue(const CommandResult.ok(stdout: 'name fingerprint\n'));
+    final storeRunner = FakeTerminalRunner()
+      ..enqueue(const CommandResult.ok(stdout: 'brand weather 4\n'));
+    final controller = WorkbenchController(
+      accountService: AccountService(
+        runner: accountRunner,
+        snapcraftEnvironment: const SnapcraftEnvironment(),
+      ),
+      keyService: KeyService(runner: keyRunner),
+      storeSchemaService: StoreSchemaService(runner: storeRunner),
+    );
+
+    await controller.bootstrap();
+
+    expect(storeRunner.calls.single.arguments, ['confdb-schemas']);
+    expect(controller.storeRows.single.name, 'weather');
   });
 
   test('openLocalDraftAt updates the selected duplicate entry only', () {
