@@ -91,7 +91,7 @@ views:
       - request: weather.city
         storage: v1.city
         access: write
-body: |- 
+body: |-
   {"storage": {"v1": {"type": "map", "schema": {}}}}
 ''');
 
