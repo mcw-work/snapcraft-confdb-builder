@@ -4,6 +4,7 @@ import '../models/command_task.dart';
 import '../models/confdb_schema_document.dart';
 import '../models/diagnostic.dart';
 import 'confdb_source_codec.dart';
+import 'editor_bridge.dart';
 import 'schema_diff_service.dart';
 import 'terminal_runner.dart';
 
@@ -67,11 +68,13 @@ class StoreSchemaService {
     required this.runner,
     this.codec = const ConfdbSourceCodec(),
     this.diffService = const SchemaDiffService(),
-  });
+    EditorBridge? editorBridge,
+  }) : editorBridge = editorBridge ?? EditorBridge(runner: runner);
 
   final TerminalRunner runner;
   final ConfdbSourceCodec codec;
   final SchemaDiffService diffService;
+  final EditorBridge editorBridge;
 
   Future<StoreSchemaInventoryResult> inventory(String accountId) async {
     final startedAt = DateTime.now();
@@ -171,6 +174,18 @@ class StoreSchemaService {
       task: remote.task,
     );
   }
+
+  Future<CommandTask> publish({
+    required String accountId,
+    required String name,
+    required String keyName,
+    required String source,
+  }) async => (await editorBridge.publish(
+    accountId: accountId,
+    name: name,
+    keyName: keyName,
+    source: source,
+  )).task;
 
   Future<CommandResult> _runInventory(String command, String accountId) => runner
       .run(

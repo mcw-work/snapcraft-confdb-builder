@@ -7,8 +7,10 @@ import 'package:flutter/foundation.dart';
 import '../models/command_task.dart';
 import '../models/confdb_schema_document.dart';
 import '../models/diagnostic.dart';
+import '../services/assertion_service.dart';
 import '../services/confdb_source_codec.dart';
 import '../services/confdb_validator.dart';
+import '../services/schema_diff_service.dart';
 import '../services/store_schema_service.dart';
 import '../services/terminal_runner.dart';
 
@@ -20,6 +22,7 @@ class WorkbenchController extends ChangeNotifier {
     this._validator = const ConfdbValidator(),
     this._codec = const ConfdbSourceCodec(),
     this._storeSchemaService,
+    this._assertionService,
   }) : _document =
            document ?? ConfdbSchemaDocument.empty(accountId: '', name: '') {
     _diagnostics = _validator.validate(_document);
@@ -28,6 +31,7 @@ class WorkbenchController extends ChangeNotifier {
   final ConfdbValidator _validator;
   final ConfdbSourceCodec _codec;
   final StoreSchemaService? _storeSchemaService;
+  final AssertionService? _assertionService;
   final Map<String, RunningCommand> _runningCommands = {};
 
   ConfdbSchemaDocument _document;
@@ -38,6 +42,10 @@ class WorkbenchController extends ChangeNotifier {
   WorkbenchTab _selectedTab = WorkbenchTab.schema;
   String? _selectedViewName;
   String? _canonicalSourceFingerprint;
+  String? _preflightFingerprint;
+  ConfdbSchemaDocument? _preflightRemote;
+  SchemaComparison? _preflightComparison;
+  String? _selectedKeyName;
   bool _isBusy = false;
 
   ConfdbSchemaDocument get document => _document;
@@ -49,6 +57,16 @@ class WorkbenchController extends ChangeNotifier {
   WorkbenchTab get selectedTab => _selectedTab;
   String? get selectedViewName => _selectedViewName;
   String? get canonicalSourceFingerprint => _canonicalSourceFingerprint;
+    ConfdbSchemaDocument? get preflightRemote => _preflightRemote;
+    SchemaComparison? get preflightComparison => _preflightComparison;
+    String? get selectedKeyName => _selectedKeyName ?? _document.artifact?.keyName;
+    bool get hasBlockers => _diagnostics.any((diagnostic) => diagnostic.isBlocker) ||
+      (_preflightComparison?.hasBlockers ?? false);
+    bool get preflightCurrent =>
+      _preflightFingerprint != null &&
+      _preflightFingerprint == _sourceFingerprint();
+    bool get canSign => !hasBlockers && (selectedKeyName?.isNotEmpty ?? false);
+    bool get canPublish => canSign && preflightCurrent;
   bool get isBusy => _isBusy;
   String get source => _codec.encode(_document);
 
@@ -57,6 +75,9 @@ class WorkbenchController extends ChangeNotifier {
     _commandTasks = const [];
     _runningCommands.clear();
     _canonicalSourceFingerprint = null;
+    _preflightFingerprint = null;
+    _preflightRemote = null;
+    _preflightComparison = null;
     _diagnostics = _validator.validate(_document);
     _upsertLocalDraft(_document);
     notifyListeners();
@@ -74,8 +95,104 @@ class WorkbenchController extends ChangeNotifier {
   }
 
   void cacheCanonicalSourceFingerprint() {
-    _canonicalSourceFingerprint = sha256.convert(utf8.encode(source)).toString();
+    _canonicalSourceFingerprint = _sourceFingerprint();
     notifyListeners();
+  }
+
+  void selectKey(String? keyName) {
+    _selectedKeyName = keyName?.trim().isEmpty ?? true ? null : keyName!.trim();
+    notifyListeners();
+  }
+
+  Future<void> refreshPreflight() async {
+    final service = _storeSchemaService;
+    if (service == null || _document.accountId.isEmpty || _document.name.isEmpty) {
+      return;
+    }
+    final fingerprint = _sourceFingerprint();
+    _isBusy = true;
+    notifyListeners();
+    try {
+      final result = await service.preflight(_document);
+      recordCommandTask(result.task, notify: false);
+      if (fingerprint == _sourceFingerprint()) {
+        _preflightFingerprint = fingerprint;
+        _preflightRemote = result.remote;
+        _preflightComparison = result.comparison;
+      }
+    } on StoreSchemaServiceException catch (error) {
+      _diagnostics = [
+        ..._diagnostics.where((diagnostic) => diagnostic.location?.section != 'store'),
+        Diagnostic(
+          code: error.code,
+          message: error.message,
+          severity: DiagnosticSeverity.blocker,
+          location: const DiagnosticLocation(section: 'store'),
+        ),
+      ];
+    } finally {
+      _isBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> publish() async {
+    final service = _storeSchemaService;
+    final keyName = selectedKeyName;
+    if (service == null || keyName == null || !canPublish) return;
+    _isBusy = true;
+    notifyListeners();
+    try {
+      final task = await service.publish(
+        accountId: _document.accountId,
+        name: _document.name,
+        keyName: keyName,
+        source: source,
+      );
+      recordCommandTask(task, notify: false);
+      if (task.status == CommandTaskStatus.succeeded) {
+        await refreshStore(_document.accountId);
+        final remote = await service.fetchRemote(
+          accountId: _document.accountId,
+          name: _document.name,
+        );
+        recordCommandTask(remote.task, notify: false);
+        _preflightRemote = remote.document;
+        _preflightComparison = service.diffService.compare(
+          remote: remote.document,
+          draft: _document,
+        );
+        _preflightFingerprint = _sourceFingerprint();
+      }
+    } on StoreSchemaServiceException catch (error) {
+      _diagnostics = [
+        ..._diagnostics,
+        Diagnostic(
+          code: error.code,
+          message: error.message,
+          severity: DiagnosticSeverity.blocker,
+          location: const DiagnosticLocation(section: 'store'),
+        ),
+      ];
+    } finally {
+      _isBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> acknowledgeArtifact() async {
+    final service = _assertionService;
+    final savedPath = _document.artifact?.savedPath;
+    if (service == null || savedPath == null) return;
+    _isBusy = true;
+    notifyListeners();
+    try {
+      final result = await service.acknowledge(savedPath);
+      recordCommandTask(result.task, notify: false);
+    } finally {
+      _isBusy = false;
+      notifyListeners();
+    }
   }
 
   void selectTab(WorkbenchTab tab) {
@@ -145,6 +262,9 @@ class WorkbenchController extends ChangeNotifier {
     _document = document;
     _diagnostics = _validator.validate(document);
     _canonicalSourceFingerprint = null;
+    _preflightFingerprint = null;
+    _preflightRemote = null;
+    _preflightComparison = null;
     _commandTasks = const [];
     _runningCommands.clear();
     notifyListeners();
@@ -214,4 +334,6 @@ class WorkbenchController extends ChangeNotifier {
     }
     _localDrafts = List.unmodifiable(drafts);
   }
+
+  String _sourceFingerprint() => sha256.convert(utf8.encode(source)).toString();
 }

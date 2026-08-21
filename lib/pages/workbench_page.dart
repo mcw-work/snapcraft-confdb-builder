@@ -7,6 +7,7 @@ import '../widgets/command_task_panel.dart';
 import '../widgets/diagnostics_panel.dart';
 import '../widgets/draft_sidebar.dart';
 import '../widgets/inspector_panel.dart';
+import '../widgets/publish_panel.dart';
 import '../widgets/source_editor.dart';
 import '../widgets/storage_tree_editor.dart';
 import '../widgets/store_schema_sidebar.dart';
@@ -69,7 +70,17 @@ class _WorkbenchPageState extends State<WorkbenchPage> {
       ],
     ]),
     WorkbenchTab.validation => DiagnosticsPanel(diagnostics: _controller.diagnostics, onNavigate: _navigateDiagnostic),
-    WorkbenchTab.publish => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [FilledButton.icon(onPressed: _controller.cacheCanonicalSourceFingerprint, icon: const Icon(Icons.fingerprint), label: const Text('Calculate source fingerprint')), const SizedBox(height: 16), Expanded(child: DiagnosticsPanel(diagnostics: _controller.diagnostics, onNavigate: _navigateDiagnostic))]),
+    WorkbenchTab.publish => PublishPanel(
+      document: _controller.document,
+      selectedKeyName: _controller.selectedKeyName,
+      diagnostics: _controller.diagnostics,
+      remote: _controller.preflightRemote,
+      comparison: _controller.preflightComparison,
+      preflightCurrent: _controller.preflightCurrent,
+      onRefreshPreflight: _controller.refreshPreflight,
+      onRunAck: () {},
+      onPublish: _controller.publish,
+    ),
   };
 
   Widget _schemaEditor() => Column(children: [
